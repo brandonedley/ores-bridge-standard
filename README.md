@@ -1,4 +1,4 @@
-# ORES Bridge -- Standard
+# ORES Bridge — Standard
 
 Purchase conversion tracking and GCLID attribution for the Limo Anywhere ORES booking widget, with automatic iframe height resizing.
 
@@ -44,7 +44,7 @@ This field controls whether ORES fires GA4 events directly. It affects what purc
 ### What This Means For You
 
 - **No GTAG in ORES?** No problem. The bridge captures the legacy dataLayer event.
-- **Already have GTAG in ORES?** The bridge captures the GA4 event. No double-tracking -- events are deduplicated.
+- **Already have GTAG in ORES?** The bridge captures the GA4 event. No double-tracking — events are deduplicated.
 - **Want to add GTAG to ORES later?** Go ahead. The bridge adapts automatically.
 
 The bridge normalizes both formats into a consistent `purchase` event with `transaction_id`, `value`, and `currency`.
@@ -210,7 +210,7 @@ Then create GTM triggers for events like `la_purchase`, `la_generate_lead`.
 
 The bridge automatically detects whether the user is completing a reservation (with pricing) or submitting a quote request (no pricing available).
 
-When no price is available -- either because the operator has disabled pricing display or because no rates match the selected route -- the widget presents a quote/lead flow instead of a booking flow. In this case, the bridge fires `generate_lead` instead of `purchase`, keeping your ecommerce reports clean.
+When no price is available — either because the operator has disabled pricing display or because no rates match the selected route —the widget presents a quote/lead flow instead of a booking flow. In this case, the bridge fires `generate_lead` instead of `purchase`, keeping your ecommerce reports clean.
 
 ### Detection Signals
 
@@ -232,7 +232,7 @@ If none of these signals indicate a quote, the bridge defaults to reservation mo
 4. **Reservation mode:** Forwards the `purchase` event with `transaction_id`, `value`, and `currency`
 5. **Quote mode:** Fires `generate_lead` instead, with `lead_source: "quote_request"` and `value: 0`
 
-The detection result is cached for the session -- once determined, it does not change mid-flow.
+The detection result is cached for the session — once determined, it does not change mid-flow.
 
 ## Event Data Examples
 
@@ -276,10 +276,11 @@ This works out of the box with no configuration required. The sender tag uses `R
 
 | File | Purpose | Where to install |
 |------|---------|------------------|
-| `parent-receiver.js` | Receives events on parent page | Your website |
-| `gtm-sender-tag.html` | Sends events from widget | GTM Custom HTML |
+| `parent-receiver.js` | Receives events on parent page | Your website (script tag on page) |
+| `gtm-sender-tag.html` | Sends events from widget (full source) | GTM Custom HTML (widget domain) |
 | `min/gtm-sender.min.html` | Minified sender | GTM Custom HTML (alternative) |
-| `min/parent-receiver.min.js` | Minified receiver | Your website (alternative) |
+| `min/gtm-sender.min.js` | Minified JS only | CDN hosting |
+| `min/parent-receiver.min.js` | Minified receiver | CDN hosting |
 
 ## Troubleshooting
 
@@ -297,7 +298,7 @@ If `la_bridge_init` appears in debug mode but no `purchase` or `generate_lead` e
 - Widget page is fully loaded before interactions
 - Complete the full booking or quote flow to trigger the event
 
-**Note:** `la_bridge_init` fires only with `data-debug="true"` -- dataLayer only, bypassing GA4.
+**Note:** `la_bridge_init` fires only with `data-debug="true"` — dataLayer only, bypassing GA4.
 
 ### GCLID not tracking
 
@@ -345,7 +346,7 @@ This is expected when the widget is in quote mode. Check:
 
 ## Upgrade to Advanced
 
-> Need full funnel tracking? **ORES Bridge -- Advanced** adds form_start, view_item_list, select_item, begin_checkout, add_payment_info events plus Enhanced Conversions (SHA-256 hashed PII for better Google Ads attribution). Contact your implementation team to upgrade.
+> Need full funnel tracking? **ORES Bridge — Advanced** adds form_start, view_item_list, select_item, begin_checkout, add_payment_info events plus Enhanced Conversions (SHA-256 hashed PII for better Google Ads attribution). Contact your implementation team to upgrade.
 
 ## License
 
