@@ -1,0 +1,377 @@
+<!--
+  Limo Anywhere dataLayer Bridge - GTM Sender Tag (Standard)
+
+  DEPLOYMENT:
+  ===========
+  1. Open Google Tag Manager
+  2. Go to the GTM container for the WIDGET domain (book.mylimobiz.com)
+  3. Create a new tag:
+     - Tag Type: Custom HTML
+     - Paste this entire code block
+  4. Configure trigger:
+     - Trigger Type: DOM Ready
+     - This trigger fires on: All Pages
+  5. Set Tag Firing Priority: 1 (Advanced Settings)
+     - This ensures the bridge loads before other tags
+  6. Save and Publish
+
+  WHAT IT DOES:
+  =============
+  - Intercepts all dataLayer.push() calls in the widget
+  - Sends events to the parent page via postMessage
+  - Parent page receives events and fires them to GA4
+-->
+<script>
+(function() {
+  'use strict';
+
+  // ========================================
+  // LA DATALAYER BRIDGE - GTM SENDER TAG (STANDARD)
+  // Copyright 2026 Brandon Edley. All Rights Reserved.
+  // Licensed for Limo Anywhere ORES integrations only.
+  // ========================================
+  var _LA_BRIDGE_ID = 'LADB-2026-EDLEY-7X9K2';
+  var _LA_BRIDGE_VERSION = '1.1.0';
+  var _LA_BRIDGE_BUILD = '20260128';
+  var _w = 'Q29weXJpZ2h0IDIwMjYgQnJhbmRvbiBFZGxleS4gTGljZW5zZWQgZm9yIExBIE9SRVMgb25seS4=';
+
+  // ========================================
+  // CONFIGURATION
+  // ========================================
+
+  var MESSAGE_TYPE = 'LA_DATALAYER_EVENT';
+  var HEIGHT_MESSAGE_TYPE = 'LA_IFRAME_HEIGHT';
+  var SESSION_ID = 'la_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  var DEBUG = false; // Set to true for console logging
+  var HEIGHT_THRESHOLD = 5; // Minimum px change to trigger update
+
+  // ========================================
+  // IMPLEMENTATION
+  // ========================================
+
+  function log() {
+    if (DEBUG) {
+      console.log.apply(console, ['[LA-Bridge Sender]'].concat(Array.prototype.slice.call(arguments)));
+    }
+  }
+
+  function isInIframe() {
+    try {
+      return window.self !== window.top;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function identifyEventType(eventData) {
+    if (eventData.event) {
+      return eventData.event;
+    }
+    if (eventData['0'] === 'event' && eventData['1']) {
+      return eventData['1'];
+    }
+    if (eventData.transactionId || eventData.transactionTotal) {
+      return 'purchase';
+    }
+    if (eventData.ecommerce) {
+      return 'ecommerce';
+    }
+    var keys = Object.keys(eventData);
+    if (keys.length > 0 && keys.length <= 3) {
+      return keys.join('_');
+    }
+    return 'unknown';
+  }
+
+  function normalizeEventData(eventData, eventName) {
+    var normalized = { event: eventName };
+
+    if (eventData['0'] === 'event' && eventData['2']) {
+      var params = eventData['2'];
+      if (eventName === 'purchase') {
+        normalized.transaction_id = params.transaction_id;
+        normalized.value = params.value;
+        normalized.currency = params.currency || 'USD';
+      }
+      return normalized;
+    }
+
+    if (eventData.transactionId || eventData.transactionTotal) {
+      normalized.transaction_id = eventData.transactionId;
+      normalized.value = parseFloat(eventData.transactionTotal) || 0;
+      normalized.currency = 'USD';
+      return normalized;
+    }
+
+    return Object.assign(normalized, eventData);
+  }
+
+  function sendToParent(eventData) {
+    if (!isInIframe()) return;
+
+    var eventName = identifyEventType(eventData);
+
+    if (eventData['0'] === 'js' || eventData['0'] === 'config') {
+      return;
+    }
+
+    var normalizedData = normalizeEventData(eventData, eventName);
+
+    var message = {
+      type: MESSAGE_TYPE,
+      payload: {
+        eventName: eventName,
+        data: normalizedData,
+        rawData: eventData,
+        timestamp: Date.now(),
+        url: window.location.href,
+        sessionId: SESSION_ID
+      }
+    };
+
+    try {
+      // For quote submissions, fire generate_lead INSTEAD of purchase
+      // Quotes are leads, not purchases - keeps ecommerce reports clean
+      if (eventName === 'purchase' && isQuoteMode()) {
+        log('Quote submission: firing generate_lead instead of purchase');
+        var leadMessage = {
+          type: MESSAGE_TYPE,
+          payload: {
+            eventName: 'generate_lead',
+            data: {
+              event: 'generate_lead',
+              lead_source: 'quote_request',
+              currency: 'USD',
+              value: 0,
+              transaction_id: normalizedData.transaction_id,
+              booking_type: 'quote',
+              is_quote: true
+            },
+            rawData: eventData,
+            timestamp: Date.now(),
+            url: window.location.href,
+            sessionId: SESSION_ID
+          }
+        };
+        window.parent.postMessage(leadMessage, '*');
+        log('Sent event: generate_lead');
+        return; // Skip sending purchase
+      }
+
+      window.parent.postMessage(message, '*');
+      log('Sent event:', message.payload.eventName);
+    } catch (e) {
+      log('Failed to send:', e);
+    }
+  }
+
+  // ========================================
+  // IFRAME HEIGHT SENDER (Optimized)
+  // ========================================
+  // Uses requestAnimationFrame for natural throttling (~60fps max)
+  // Only sends when height changes by more than threshold
+  // ResizeObserver only - no redundant MutationObserver or polling
+
+  var lastSentHeight = 0;
+  var rafId = null;
+
+  function sendHeight() {
+    // Get document height using multiple methods for reliability
+    var height = Math.max(
+      document.body.scrollHeight,
+      document.body.offsetHeight,
+      document.documentElement.scrollHeight,
+      document.documentElement.offsetHeight,
+      document.documentElement.clientHeight
+    );
+
+    // Add a small buffer to prevent edge-case scrollbars
+    height = Math.ceil(height) + 1;
+
+    // Only send if height changed by more than threshold (reduces noise)
+    if (Math.abs(height - lastSentHeight) > HEIGHT_THRESHOLD && height > 0) {
+      lastSentHeight = height;
+      try {
+        window.parent.postMessage({
+          type: HEIGHT_MESSAGE_TYPE,
+          height: height,
+          sessionId: SESSION_ID
+        }, '*');
+        log('Sent height:', height);
+      } catch (e) {
+        log('Failed to send height:', e);
+      }
+    }
+  }
+
+  function scheduleHeightUpdate() {
+    // Use requestAnimationFrame for natural throttling
+    // This syncs with browser paint cycle and batches rapid changes
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+    }
+    rafId = requestAnimationFrame(function() {
+      rafId = null;
+      sendHeight();
+    });
+  }
+
+  function setupHeightObserver() {
+    if (!isInIframe()) return;
+
+    // ResizeObserver is sufficient - it catches all size changes
+    // MutationObserver is redundant and adds overhead
+    // Browser support is 96%+ as of 2024
+    if (typeof ResizeObserver !== 'undefined') {
+      var resizeObserver = new ResizeObserver(scheduleHeightUpdate);
+      resizeObserver.observe(document.body);
+      resizeObserver.observe(document.documentElement);
+      log('ResizeObserver installed');
+    } else {
+      // Fallback only for very old browsers without ResizeObserver
+      log('ResizeObserver not available, using fallback');
+      setInterval(sendHeight, 500);
+    }
+
+    // Send initial height after content renders
+    // Using load event is more reliable than arbitrary timeouts
+    if (document.readyState === 'complete') {
+      sendHeight();
+    } else {
+      window.addEventListener('load', sendHeight);
+    }
+
+    log('Height observer setup complete');
+  }
+
+  function interceptDataLayer() {
+    window.dataLayer = window.dataLayer || [];
+    var originalPush = window.dataLayer.push.bind(window.dataLayer);
+
+    window.dataLayer.push = function() {
+      var args = Array.prototype.slice.call(arguments);
+      args.forEach(function(item) {
+        if (item && typeof item === 'object') {
+          sendToParent(item);
+        }
+      });
+      return originalPush.apply(window.dataLayer, args);
+    };
+
+    log('dataLayer interceptor installed');
+
+    window.dataLayer.forEach(function(item) {
+      if (item && typeof item === 'object') {
+        if (item.event) {
+          sendToParent(item);
+        } else if (item['0'] === 'event' && item['1']) {
+          sendToParent(item);
+        } else if (item.transactionId || item.transactionTotal) {
+          sendToParent(item);
+        }
+      }
+    });
+  }
+
+  function protectDataLayer() {
+    var currentDataLayer = window.dataLayer;
+    Object.defineProperty(window, 'dataLayer', {
+      get: function() { return currentDataLayer; },
+      set: function(newValue) {
+        log('dataLayer reassignment detected');
+        currentDataLayer = newValue;
+        if (Array.isArray(newValue)) {
+          interceptDataLayer();
+        }
+      },
+      configurable: true
+    });
+  }
+
+  // ========================================
+  // QUOTE DETECTION
+  // ========================================
+  // Detects whether user is requesting a quote (no price) vs booking a reservation (with price)
+  // Quote mode signals: BookType='Quote', 'Request Quote' buttons, .price-not-available class
+
+  var cachedBookingType = null;
+
+  function getBookingType() {
+    // Return cached value if we've already detected it (it won't change mid-session)
+    if (cachedBookingType) return cachedBookingType;
+
+    // Primary signal: hidden input #BookType
+    var bookTypeInput = document.querySelector('#BookType');
+    if (bookTypeInput && bookTypeInput.value) {
+      cachedBookingType = bookTypeInput.value.toLowerCase(); // 'quote' or 'trip'
+      log('Booking type from #BookType:', cachedBookingType);
+      return cachedBookingType;
+    }
+
+    // Secondary signal: button onclick contains 'Quote'
+    var vehicleBtn = document.querySelector('#step2RateSection button[onclick*="Quote"]');
+    if (vehicleBtn) {
+      cachedBookingType = 'quote';
+      log('Booking type from button onclick: quote');
+      return cachedBookingType;
+    }
+
+    // Tertiary signal: button text says "Request Quote"
+    var quoteBtn = document.querySelector('#step2RateSection button');
+    if (quoteBtn && quoteBtn.textContent.toLowerCase().indexOf('quote') >= 0) {
+      cachedBookingType = 'quote';
+      log('Booking type from button text: quote');
+      return cachedBookingType;
+    }
+
+    // Default to reservation (trip) if no quote signals found
+    cachedBookingType = 'trip';
+    log('Booking type defaulting to: trip');
+    return cachedBookingType;
+  }
+
+  function isQuoteMode() {
+    return getBookingType() === 'quote';
+  }
+
+  // Add booking type metadata to event data
+  function addBookingTypeToEvent(eventData) {
+    var bookingType = getBookingType();
+    eventData.booking_type = bookingType;
+    eventData.is_quote = (bookingType === 'quote');
+    return eventData;
+  }
+
+  // ========================================
+  // INITIALIZE
+  // ========================================
+
+  function init() {
+    log('Initializing session:', SESSION_ID);
+
+    if (!isInIframe()) {
+      log('Not in iframe, sender disabled');
+      return;
+    }
+
+    interceptDataLayer();
+    protectDataLayer();
+    setupHeightObserver();
+
+    // Only send init event in debug mode (diagnostic only, not for GA4)
+    if (DEBUG) {
+      sendToParent({
+        event: 'la_bridge_init',
+        la_session_id: SESSION_ID,
+        la_widget_url: window.location.href,
+        _debug_only: true  // Signal to receiver: dataLayer only, skip gtag
+      });
+    }
+
+    log('Sender initialized');
+  }
+
+  init();
+
+})();
+</script>
