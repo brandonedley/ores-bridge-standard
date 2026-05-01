@@ -55,7 +55,7 @@
   var config = {
     measurementId: script.dataset.measurementId || null,
     mode: script.dataset.mode || 'auto',
-    eventPrefix: script.dataset.eventPrefix || 'la_',
+    eventPrefix: script.dataset.eventPrefix === undefined ? 'la_' : script.dataset.eventPrefix,
     allowedOrigins: (script.dataset.allowedOrigins || 'https://book.mylimobiz.com').split(',').map(function(s) { return s.trim(); }),
     debug: script.dataset.debug === 'true',
     // Height auto-resize configuration
