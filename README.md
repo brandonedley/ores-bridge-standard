@@ -1,359 +1,167 @@
-# ORES Bridge — Standard
+# ORES Bridge
 
-Purchase conversion tracking and GCLID attribution for the Limo Anywhere ORES booking widget, with automatic iframe height resizing.
+Track Limo Anywhere booking conversions and Google Ads gclid attribution from your own domain. Auto-resizes the iframe so the widget never scrolls inside itself.
 
-## Overview
+Two pieces:
+1. **GTM tag** inside the widget (`book.mylimobiz.com`) — sends events out via `postMessage`.
+2. **Receiver script + iframe** on your page — receives events, fires GA4, resizes the iframe.
 
-When you embed the Limo Anywhere widget (`book.mylimobiz.com`) in an iframe, the iframe isolates analytics events from your page. This bridge captures those events and forwards them to your parent page via `postMessage`, enabling you to:
+---
 
-- Track purchase conversions in YOUR GA4 property
-- Preserve GCLID attribution from Google Ads
-- Fire conversion events from your domain
-- Automatically resize the iframe to eliminate scrollbars
+## Install
 
-## ORES Settings Compatibility
+You need ten minutes and two values:
 
-**No changes needed to your Limo Anywhere settings.** The bridge works regardless of your ORES configuration.
+- **Your company ID** — the slug after `/v4/` in your booking URL (e.g., `limoforla`).
+- **Your GA4 Measurement ID** — looks like `G-XXXXXXXXXX`. Skip if GTM manages GA4 on your site.
 
-### ORES & Mobile Settings Fields
+### Step 1 — Paste the GTM tag
 
-In Limo Anywhere's backend under **ORES & Mobile Settings**, there are two relevant fields:
+In the GTM container that loads inside the widget (set in Limo Anywhere → ORES & Mobile Settings → Tag Manager Code; enter the part **after** `GTM-`):
 
-#### 1. Tag Manager Code
+1. **Tags → New → Custom HTML.**
+2. Open [`gtm-sender-tag.html`](https://raw.githubusercontent.com/brandonedley/ores-bridge-standard/main/gtm-sender-tag.html), copy the entire file, paste into the HTML field.
+3. **Triggering → DOM Ready → All Pages.**
+4. **Advanced Settings → Tag firing priority** = `1`.
+5. **Save → Submit → Publish.**
 
-This field controls which GTM container loads in the widget. **The sender tag must be deployed to this container.**
+### Step 2 — Paste the script and iframe on your page
 
-**Important:** Enter ONLY the code **after** `GTM-`, not the full container ID.
-
-| If your container is... | Enter this value |
-|------------------------|------------------|
-| `GTM-XXXXXXX` | `XXXXXXX` |
-| `GTM-ABC123` | `ABC123` |
-
-**Common mistake:** Entering `GTM-XXXXXXX` (with the prefix) breaks the integration. Enter only `XXXXXXX`.
-
-#### 2. Google Tag ID
-
-This field controls whether ORES fires GA4 events directly. It affects what purchase events ORES emits:
-
-| ORES Google Tag ID Setting | What ORES Emits | Bridge Behavior |
-|---------------------------|-----------------|-----------------|
-| **Configured** (e.g., `G-ABC123`) | GA4-style `gtag("event", "purchase", {...})` | Captured and forwarded |
-| **Empty / Not configured** | Legacy `dataLayer.push({transactionId, transactionTotal})` | Captured and forwarded |
-
-### What This Means For You
-
-- **No GTAG in ORES?** No problem. The bridge captures the legacy dataLayer event.
-- **Already have GTAG in ORES?** The bridge captures the GA4 event. No double-tracking — events are deduplicated.
-- **Want to add GTAG to ORES later?** Go ahead. The bridge adapts automatically.
-
-The bridge normalizes both formats into a consistent `purchase` event with `transaction_id`, `value`, and `currency`.
-
-## Quick Start
-
-### 1. Add the Parent Receiver to Your Page
-
-Add this script to any page that embeds the Limo Anywhere widget:
-
-**Option A: External script (recommended)**
-```html
-<!-- ORES Bridge - Parent Receiver -->
-<script
-  data-la-bridge
-  data-measurement-id="G-XXXXXXXXXX"
-  src="https://yourcdn.com/parent-receiver.js"
-></script>
-```
-
-**Option B: Inline script (paste directly)**
-
-Use this when you can't upload files to your server (e.g., page builders, CMS restrictions).
-
-**Steps:**
-1. Open [`parent-receiver.js`](https://github.com/brandonedley/ores-bridge-standard/blob/main/parent-receiver.js) (or [`min/parent-receiver.min.js`](https://github.com/brandonedley/ores-bridge-standard/blob/main/min/parent-receiver.min.js) for smaller size)
-2. Click "Raw" to view the plain code
-3. Copy the entire file contents
-4. Paste into your page like this:
+Replace `YOUR-COMPANY-ID` and `G-XXXXXXXXXX`. Paste both blocks anywhere a booking widget should appear:
 
 ```html
-<!-- ORES Bridge - Parent Receiver -->
+<!-- ORES Bridge — receiver -->
 <script data-la-bridge data-measurement-id="G-XXXXXXXXXX">
-(function() {
-  'use strict';
-  // ... rest of the pasted code goes here ...
-})();
+!function(){"use strict";var e=document.currentScript||document.querySelector("script[data-la-bridge]");if(e){var t={measurementId:e.dataset.measurementId||null,mode:e.dataset.mode||"auto",eventPrefix:e.dataset.eventPrefix||"la_",allowedOrigins:(e.dataset.allowedOrigins||"https://book.mylimobiz.com").split(",").map(function(e){return e.trim()}),debug:"true"===e.dataset.debug,iframeSelector:e.dataset.iframeSelector||'iframe[src*="book.mylimobiz.com"]',minHeight:parseInt(e.dataset.minHeight,10)||400,maxHeight:parseInt(e.dataset.maxHeight,10)||2e3,enableHeightResize:"false"!==e.dataset.enableHeightResize};d("Config loaded:",t);var a=t.mode,i=t.measurementId,n={purchase:{name:"purchase",params:["transaction_id","value","currency","items","coupon","shipping","tax","booking_type","is_quote"]},generate_lead:{name:"generate_lead",params:["value","currency","lead_source","transaction_id","booking_type","is_quote"]}},r=null,o={};g(),window.addEventListener("message",c,!1),d("Receiver initialized. Listening for events from:",t.allowedOrigins.join(", ")),window.dataLayer=window.dataLayer||[],window.dataLayer.push({event:t.eventPrefix+"bridge_ready",la_bridge_mode:a,la_bridge_measurement_id:i||"auto"})}else console.error("[LA-Bridge] Could not find script element. Add data-la-bridge attribute.");function d(){if(t.debug){var e=["[LA-Bridge]"].concat(Array.prototype.slice.call(arguments));console.log.apply(console,e)}}function g(){"gtag"===t.mode||"dataLayer"===t.mode?a=t.mode:t.measurementId?a="gtag":"function"==typeof window.gtag?(a="gtag",i=function(){if(window.dataLayer&&Array.isArray(window.dataLayer))for(var e=0;e<window.dataLayer.length;e++){var t=window.dataLayer[e];if(t&&"config"===t[0]&&"string"==typeof t[1]&&t[1].startsWith("G-"))return t[1]}if(window.google_tag_data&&window.google_tag_data.tidr)for(var a=Object.keys(window.google_tag_data.tidr),i=0;i<a.length;i++)if(a[i].startsWith("G-"))return a[i];return null}()):a="dataLayer","gtag"===a&&"function"!=typeof window.gtag&&(window.dataLayer=window.dataLayer||[],window.gtag=function(){window.dataLayer.push(arguments)},d("Bootstrapped window.gtag (GTM-managed GA4 detected)")),d("Resolved mode:",a,"Measurement ID:",i||"(auto)")}function s(e,a){window.dataLayer=window.dataLayer||[];var i={event:t.eventPrefix+e};return Object.keys(a).forEach(function(e){"event"!==e&&(i[t.eventPrefix+e]=a[e])}),d("Pushing to dataLayer:",i),window.dataLayer.push(i),!0}function l(e,t){return d("Handling event:",e,t),t&&t._debug_only?(delete t._debug_only,s(e,t)):"gtag"===a?function(e,t){if("function"!=typeof window.gtag)return d("gtag not available, falling back to dataLayer"),s(e,t),!1;var a={},r=n[e];r?r.params.forEach(function(e){void 0!==t[e]&&(a[e]=t[e])}):delete(a=Object.assign({},t)).event,i&&(a.send_to=i),d("Firing gtag:",e,a);try{return window.gtag("event",e,a),!0}catch(a){return d("gtag error:",a),s(e,t),!1}}(e,t):s(e,t)}function u(e){if(t.enableHeightResize){var a=function(){var m=document.querySelectorAll(t.iframeSelector);if(!m.length)return null;for(var k=0;k<m.length;k++){var x=m[k];if(x&&x.offsetParent){var rc=x.getBoundingClientRect();if(rc.width>0&&rc.height>0)return x}}return m[0]}();if(a){var i=Math.max(t.minHeight,Math.min(t.maxHeight,e));a.style.height=i+"px",d("Updated iframe height:",i,"(raw:",e+")")}else d("No iframe found with selector:",t.iframeSelector)}else d("Height resize disabled, ignoring height:",e)}function c(e){if(a=e.origin,-1!==t.allowedOrigins.indexOf("*")||-1!==t.allowedOrigins.indexOf(a)){var a,i=e.data;if(i&&i.type)if("LA_IFRAME_HEIGHT"!==i.type){if("LA_DATALAYER_EVENT"===i.type){var n=i.payload;if(n&&n.eventName){if(!n.eventName.startsWith("gtm.")){var r=n.timestamp+"_"+n.eventName;if(o[r])d("Duplicate event skipped:",n.eventName);else{o[r]=!0;var g=Object.keys(o);g.length>100&&delete o[g[0]],d("Received from",e.origin+":",n.eventName),l(n.eventName,n.data||{})}}}else d("Invalid payload:",i)}}else"number"==typeof i.height&&i.height>0&&u(i.height)}}}();
 </script>
+
+<!-- ORES Bridge — booking widget -->
+<iframe
+  src="https://book.mylimobiz.com/v4/YOUR-COMPANY-ID"
+  style="width:100%; min-height:600px; border:0; display:block;"
+  scrolling="no"
+  title="Book a ride"></iframe>
 ```
 
-**Important:** The `data-la-bridge` and `data-measurement-id` attributes go on the opening `<script>` tag itself, not inside the JavaScript.
+The iframe needs `width:100%` (default is ~300px), `min-height` not fixed `height` (the receiver auto-grows the height), and `scrolling="no"` (no scrollbar inside the widget once auto-resize works).
 
-### 2. Deploy the Sender Tag to GTM
+**Wix users:** Wix renders Custom HTML embeds twice. The receiver picks the visible iframe automatically. Stretch the Custom HTML block in the Wix editor — `width:100%` only fills the container Wix gives you.
 
-1. Open Google Tag Manager
-2. Go to the GTM container for your **widget domain** (book.mylimobiz.com)
-3. Create a new **Custom HTML** tag
-4. Paste the contents of `gtm-sender-tag.html`
-5. Set trigger: **DOM Ready - All Pages**
-6. Set Tag Firing Priority: **1** (fires before other tags)
-7. Save and publish
+### Step 3 — Verify
 
-## Configuration Options
+Open the page. In DevTools console:
 
-### Parent Receiver Options
+```js
+window.dataLayer.find(e => e.event === 'la_bridge_ready')
+```
 
-| Attribute | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `data-la-bridge` | Yes | - | Marker to identify the script |
-| `data-measurement-id` | No | Auto-detect | GA4 Measurement ID (e.g., `G-XXXXXXXXXX`) |
-| `data-mode` | No | `auto` | `auto`, `gtag`, or `dataLayer` (see below) |
-| `data-event-prefix` | No | `la_` | Prefix for dataLayer events |
-| `data-allowed-origins` | No | `https://book.mylimobiz.com` | Comma-separated allowed origins |
-| `data-debug` | No | `false` | Enable console logging |
+Returns an object → receiver is running. Click the widget's Service Type dropdown, then watch GA4 → Admin → DebugView. `purchase` and `generate_lead` events arrive after a test booking.
 
-### Height Resize Options
+---
 
-| Attribute | Required | Default | Description |
-|-----------|----------|---------|-------------|
-| `data-iframe-selector` | No | `iframe[src*="book.mylimobiz.com"]` | CSS selector for the iframe element |
-| `data-min-height` | No | `400` | Minimum iframe height in pixels |
-| `data-max-height` | No | `2000` | Maximum iframe height in pixels |
-| `data-enable-height-resize` | No | `true` | Set to `"false"` to disable auto height |
+## Hosting the script externally (alternative to inline)
 
-### Examples
+Skip this if the inline paste worked.
 
-**Minimal (auto-detect GA4):**
+Self-host `parent-receiver.min.js` on your CDN, then replace the inline block above with:
+
 ```html
-<script data-la-bridge src="parent-receiver.js"></script>
+<script data-la-bridge data-measurement-id="G-XXXXXXXXXX"
+        src="https://yourcdn.com/parent-receiver.min.js"></script>
 ```
 
-**With explicit GA4 ID:**
+Use this when you control your hosting and want one place to ship updates.
+
+---
+
+## Events fired
+
+| Event | When it fires | Why |
+|---|---|---|
+| `purchase` | Booking completed with a price | Standard GA4 ecommerce |
+| `generate_lead` | Quote submitted (no price shown) | Keeps ecommerce reports clean |
+
+The bridge picks `generate_lead` over `purchase` whenever the widget runs in quote mode — when ORES displays "Request Quote" instead of a price. It checks the `#BookType` hidden input first, then button text. The result is cached per session.
+
+---
+
+## Configuration
+
+Override defaults with `data-*` attributes on the `<script>` tag:
+
+| Attribute | Default | Use when |
+|---|---|---|
+| `data-measurement-id` | auto-detect | You want to pin a specific GA4 stream |
+| `data-mode` | `auto` | You're using GTM (set to `dataLayer`) — see below |
+| `data-debug` | `false` | Diagnosing — logs to `[LA-Bridge]` console prefix |
+| `data-allowed-origins` | `https://book.mylimobiz.com` | Self-hosted ORES on a different host |
+| `data-iframe-selector` | `iframe[src*="book.mylimobiz.com"]` | Custom iframe wrapper |
+| `data-min-height` / `data-max-height` | `400` / `2000` | Constrain auto-resize |
+| `data-enable-height-resize` | `true` | Set `"false"` to keep your fixed height |
+
+### gtag mode vs. dataLayer mode
+
+The receiver picks one of two paths:
+
+| Setup | Mode | Where events go |
+|---|---|---|
+| `data-measurement-id="G-..."` set | **gtag** | `gtag('event', ...)` direct to GA4 |
+| No measurement ID, page already runs gtag | **gtag** | Same |
+| Otherwise | **dataLayer** | `window.dataLayer.push({event:'la_purchase', ...})` for GTM |
+
+If your Google Ads conversions live in GTM as Custom Event triggers (`la_purchase`, `la_generate_lead`), force dataLayer mode:
+
 ```html
-<script
-  data-la-bridge
-  data-measurement-id="G-ABC123XYZ"
-  src="parent-receiver.js"
-></script>
+<script data-la-bridge data-mode="dataLayer" ...></script>
 ```
 
-**Full configuration:**
-```html
-<script
-  data-la-bridge
-  data-measurement-id="G-ABC123XYZ"
-  data-mode="gtag"
-  data-allowed-origins="https://book.mylimobiz.com,https://book.limoanywhere.com"
-  data-max-height="3000"
-  data-debug="true"
-  src="parent-receiver.js"
-></script>
-```
+gtag mode bypasses GTM entirely. This is the most common cause of "tracking isn't working."
 
-**Inline (pasted code):**
-```html
-<script
-  data-la-bridge
-  data-measurement-id="G-ABC123XYZ"
-  data-debug="true"
->
-(function() {
-  'use strict';
-  var _LA_BRIDGE_ID = 'LADB-2026-EDLEY-7X9K2';
-  // ... paste rest of parent-receiver.js or parent-receiver.min.js here ...
-})();
-</script>
-```
-
-> **Tip:** When pasting inline, all `data-*` attributes go on the `<script>` tag. The JavaScript inside reads them automatically.
-
-## How Mode Detection Works
-
-The `data-mode` attribute controls how the bridge fires events on your parent page:
-
-| Mode | Behavior |
-|------|----------|
-| `gtag` | Fires `gtag("event", ...)` directly to GA4 |
-| `dataLayer` | Pushes `{event: "la_purchase", ...}` to `window.dataLayer` for GTM to handle |
-| `auto` | Detects which to use (default) |
-
-**Auto mode logic:**
-
-1. If you set `data-measurement-id="G-XXXXXX"` --> uses **gtag** mode
-2. Else if `window.gtag` exists on your page --> uses **gtag** mode and auto-detects the measurement ID from your existing GA4 setup
-3. Else --> uses **dataLayer** mode (lets your GTM handle it)
-
-**When to use each:**
-
-| Your setup | Recommended mode |
-|------------|------------------|
-| gtag.js loaded directly on page (no GTM) | `auto` or `gtag` |
-| GTM manages all your GA4 tags | `dataLayer` |
-| Both gtag.js and GTM | `gtag` with explicit measurement ID |
-
-**Example: Force dataLayer mode for GTM**
-```html
-<script
-  data-la-bridge
-  data-mode="dataLayer"
-  src="parent-receiver.js"
-></script>
-```
-Then create GTM triggers for events like `la_purchase`, `la_generate_lead`.
-
-## Events Tracked
-
-| Event | Trigger | GA4 Ecommerce |
-|-------|---------|---------------|
-| `purchase` | Booking completed | Yes |
-| `generate_lead` | Quote submitted (no price shown) | No (custom) |
-
-## Quote Detection
-
-The bridge automatically detects whether the user is completing a reservation (with pricing) or submitting a quote request (no pricing available).
-
-When no price is available — either because the operator has disabled pricing display or because no rates match the selected route —the widget presents a quote/lead flow instead of a booking flow. In this case, the bridge fires `generate_lead` instead of `purchase`, keeping your ecommerce reports clean.
-
-### Detection Signals
-
-The sender tag checks three signals to determine quote vs. reservation mode:
-
-| Signal | What It Checks | Priority |
-|--------|---------------|----------|
-| `#BookType` hidden input | `value` equals `"Quote"` | Primary |
-| Button `onclick` attribute | Contains `"Quote"` in `#step2RateSection` | Secondary |
-| Button text | Contains the word "Quote" in `#step2RateSection` | Tertiary |
-
-If none of these signals indicate a quote, the bridge defaults to reservation mode and fires `purchase` as normal.
-
-### How It Works
-
-1. User completes the booking form in the widget
-2. ORES fires a purchase/transaction event to the dataLayer
-3. The sender tag intercepts the event and checks the quote signals
-4. **Reservation mode:** Forwards the `purchase` event with `transaction_id`, `value`, and `currency`
-5. **Quote mode:** Fires `generate_lead` instead, with `lead_source: "quote_request"` and `value: 0`
-
-The detection result is cached for the session — once determined, it does not change mid-flow.
-
-## Event Data Examples
-
-### purchase
-```json
-{
-  "event": "purchase",
-  "transaction_id": "14887",
-  "currency": "USD",
-  "value": 217.44
-}
-```
-
-### generate_lead
-```json
-{
-  "event": "generate_lead",
-  "lead_source": "quote_request",
-  "currency": "USD",
-  "value": 0,
-  "transaction_id": "14887",
-  "booking_type": "quote",
-  "is_quote": true
-}
-```
-
-## Iframe Auto-Height Resize
-
-The bridge automatically resizes the ORES iframe to match the widget's content height, eliminating scrollbars and double-scroll issues.
-
-This works out of the box with no configuration required. The sender tag uses `ResizeObserver` to detect content height changes inside the widget and sends height updates to the parent page via `postMessage`. The receiver applies the new height to the iframe element, clamped to the configured min/max bounds.
-
-**Key behaviors:**
-- Height updates are throttled via `requestAnimationFrame` to avoid layout thrash
-- A 5px change threshold prevents unnecessary updates
-- Falls back to `setInterval` polling on browsers without `ResizeObserver` support
-
-**To customize or disable**, use the height resize `data-*` attributes on the receiver (see [Height Resize Options](#height-resize-options)).
-
-## Files
-
-| File | Purpose | Where to install |
-|------|---------|------------------|
-| `parent-receiver.js` | Receives events on parent page | Your website (script tag on page) |
-| `gtm-sender-tag.html` | Sends events from widget (full source) | GTM Custom HTML (widget domain) |
-| `min/gtm-sender.min.html` | Minified sender | GTM Custom HTML (alternative) |
-| `min/gtm-sender.min.js` | Minified JS only | CDN hosting |
-| `min/parent-receiver.min.js` | Minified receiver | CDN hosting |
+---
 
 ## Troubleshooting
 
-### Events not appearing
+**`la_bridge_ready` missing from `dataLayer`** — the receiver script never ran. Check that `data-la-bridge` is on the `<script>` tag and the script content actually loaded.
 
-1. **Check GTM is published**: Ensure the sender tag is published, not just saved
-2. **Wait for cache**: GTM can take 30-60 seconds to propagate
-3. **Enable debug mode**: Set `data-debug="true"` on the receiver
-4. **Check console**: Look for `[LA-Bridge]` messages
-
-### Events not firing (but debug works)
-
-If `la_bridge_init` appears in debug mode but no `purchase` or `generate_lead` events fire:
-- GTM container has the latest version published
-- Widget page is fully loaded before interactions
-- Complete the full booking or quote flow to trigger the event
-
-**Note:** `la_bridge_init` fires only with `data-debug="true"` — dataLayer only, bypassing GA4.
-
-### GCLID not tracking
-
-Ensure:
-- Parent page has gtag.js loaded with your GA4 ID
-- User arrived via a Google Ads click (check for `gclid` in URL)
-- Receiver is using `gtag` mode (auto-detects if gtag exists)
-
-### generate_lead firing instead of purchase
-
-This is expected when the widget is in quote mode. Check:
-- Whether the operator has pricing enabled for the selected route
-- The `#BookType` hidden input value in the widget DOM
-- Enable debug mode to see `[LA-Bridge Sender] Booking type from #BookType: quote` in the console
-
-## How It Works
-
+**Receiver loaded, no events fire** — the GTM sender tag isn't published, or it's in the wrong container. Run this in the parent page console, then click in the widget:
+```js
+addEventListener('message', e => console.log(e.origin, e.data))
 ```
-+------------------------------------------------------------------+
-| Parent Page (yourdomain.com)                                      |
-|                                                                   |
-|  +-----------------------------------------------------------+   |
-|  | iframe (book.mylimobiz.com)                                |   |
-|  |                                                            |   |
-|  |  GTM Sender Tag                                            |   |
-|  |    +-- Intercepts dataLayer.push()                         |   |
-|  |    +-- Detects quote vs reservation mode                   |   |
-|  |    +-- Sends height updates via postMessage --------+      |   |
-|  |    +-- Sends events via postMessage ------------+   |      |   |
-|  |                                                 |   |      |   |
-|  +-------------------------------------------------|---|------+   |
-|                                                    |   |          |
-|  Parent Receiver                                   |   |          |
-|    +-- Receives postMessage <----------------------+   |          |
-|    +-- Validates origin                                |          |
-|    +-- Fires gtag('event', ...) or dataLayer.push()    |          |
-|    +-- Resizes iframe height <-------------------------+          |
-|                                                                   |
-|  GA4 (yourdomain.com)                                             |
-|    +-- Receives purchase / generate_lead events                   |
-|    +-- Preserves GCLID attribution                                |
-|                                                                   |
-+------------------------------------------------------------------+
-```
+You should see `LA_DATALAYER_EVENT` arrive from `https://book.mylimobiz.com`. If not, GTM sender isn't running.
 
-## Upgrade to Advanced
+**Events fire to GA4 but Google Ads conversions never count** — you're in gtag mode but configured the conversion in GTM. Switch to `data-mode="dataLayer"` (above).
 
-> Need full funnel tracking? **ORES Bridge — Advanced** adds form_start, view_item_list, select_item, begin_checkout, add_payment_info events plus Enhanced Conversions (SHA-256 hashed PII for better Google Ads attribution). Contact your implementation team to upgrade.
+**Iframe stays at the wrong height** — Wix renders the embed twice; older versions of the receiver picked the hidden iframe. Update to the latest `parent-receiver.min.js`.
+
+**Console errors from `widget-loader.js`: `event.data.indexOf is not a function`** — Limo Anywhere's own message handler choking on object-typed postMessages from third-party scripts. Harmless. Not from this bridge.
+
+---
+
+## Files
+
+| File | Where it goes |
+|---|---|
+| `gtm-sender-tag.html` | Paste into the widget's GTM Custom HTML tag |
+| `min/gtm-sender.min.html` | Smaller version of the above |
+| `parent-receiver.js` | Readable source for the receiver |
+| `min/parent-receiver.min.js` | Minified receiver — what's inlined above |
+
+---
+
+## How it works
+
+The widget's GTM container loads the sender tag, which intercepts every `dataLayer.push()` inside the iframe and forwards it via `window.parent.postMessage()`. The receiver on your page listens for those messages, validates origin, and either calls `gtag('event', ...)` or pushes a prefixed event to `dataLayer`. A separate `LA_IFRAME_HEIGHT` message stream resizes the iframe to fit its content.
+
+Because the receiver fires on **your** domain, GA4 attaches your gclid cookie and Google Ads attribution stays intact.
+
+---
+
+## Upgrade
+
+**ORES Bridge — Advanced** adds full-funnel events (`form_start`, `view_item_list`, `select_item`, `add_contact_info`, `begin_checkout`, `add_payment_info`) plus Enhanced Conversions (SHA-256 hashed contact data for Google Ads). Contact your implementation team.
+
+---
 
 ## License
 
-Copyright (c) 2026 Brandon Edley. All Rights Reserved.
-
-Free for use with Limo Anywhere ORES integrations only. See [LICENSE](LICENSE) for details.
-
-## Support
-
-For issues or questions, contact your implementation team.
+Copyright © 2026 Brandon Edley. Free for use with Limo Anywhere ORES integrations. See [LICENSE](LICENSE).
