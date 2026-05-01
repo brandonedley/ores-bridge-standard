@@ -103,7 +103,11 @@
       return normalized;
     }
 
-    return Object.assign(normalized, eventData);
+    var keys = Object.keys(eventData);
+    for (var k = 0; k < keys.length; k++) {
+      normalized[keys[k]] = eventData[keys[k]];
+    }
+    return normalized;
   }
 
   function sendToParent(eventData) {
@@ -274,18 +278,18 @@
   }
 
   function protectDataLayer() {
-    var currentDataLayer = window.dataLayer;
-    Object.defineProperty(window, 'dataLayer', {
-      get: function() { return currentDataLayer; },
-      set: function(newValue) {
+    // Monitor for dataLayer reassignment without Object.defineProperty
+    // (which can conflict with GTM's own dataLayer management)
+    var knownDataLayer = window.dataLayer;
+    setInterval(function() {
+      if (window.dataLayer !== knownDataLayer) {
         log('dataLayer reassignment detected');
-        currentDataLayer = newValue;
-        if (Array.isArray(newValue)) {
+        knownDataLayer = window.dataLayer;
+        if (Array.isArray(window.dataLayer)) {
           interceptDataLayer();
         }
-      },
-      configurable: true
-    });
+      }
+    }, 1000);
   }
 
   // ========================================
@@ -332,14 +336,6 @@
 
   function isQuoteMode() {
     return getBookingType() === 'quote';
-  }
-
-  // Add booking type metadata to event data
-  function addBookingTypeToEvent(eventData) {
-    var bookingType = getBookingType();
-    eventData.booking_type = bookingType;
-    eventData.is_quote = (bookingType === 'quote');
-    return eventData;
   }
 
   // ========================================

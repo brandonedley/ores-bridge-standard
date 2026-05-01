@@ -98,6 +98,15 @@
     return null;
   }
 
+  // Bootstrap gtag if missing (GTM-managed GA4 doesn't expose window.gtag)
+  function ensureGtag() {
+    if (typeof window.gtag !== 'function') {
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function() { window.dataLayer.push(arguments); };
+      log('Bootstrapped window.gtag (GTM-managed GA4 detected)');
+    }
+  }
+
   function resolveMode() {
     if (config.mode === 'gtag' || config.mode === 'dataLayer') {
       resolvedMode = config.mode;
@@ -111,6 +120,12 @@
         resolvedMode = 'dataLayer';
       }
     }
+
+    // If we resolved to gtag mode, ensure the function exists
+    if (resolvedMode === 'gtag') {
+      ensureGtag();
+    }
+
     log('Resolved mode:', resolvedMode, 'Measurement ID:', resolvedMeasurementId || '(auto)');
   }
 
@@ -194,14 +209,19 @@
   // IFRAME HEIGHT HANDLER
   // ========================================
 
-  var cachedIframe = null;
+  function isIframeVisible(iframe) {
+    if (!iframe || !iframe.offsetParent) return false;
+    var rect = iframe.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
 
   function findIframe() {
-    if (cachedIframe && document.contains(cachedIframe)) {
-      return cachedIframe;
+    var matches = document.querySelectorAll(config.iframeSelector);
+    if (matches.length === 0) return null;
+    for (var i = 0; i < matches.length; i++) {
+      if (isIframeVisible(matches[i])) return matches[i];
     }
-    cachedIframe = document.querySelector(config.iframeSelector);
-    return cachedIframe;
+    return matches[0];
   }
 
   function handleHeightMessage(height) {
